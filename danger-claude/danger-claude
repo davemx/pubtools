@@ -1,8 +1,57 @@
 #!/usr/bin/env zsh
 
+## Color-coded output functions
+error() { print -P "%F{red}Error: $1%f" >&2; }
+info() { print -P "%F{blue}$1%f"; }
+success() { print -P "%F{green}$1%f"; }
+
+## Help function
+show_help() {
+    echo "danger-claude: Run Claude Code dangerously but in a sandboxed environment"
+    echo ""
+    echo "Usage: danger-claude [options] [claude-args...]"
+    echo ""
+    echo "Options:"
+    echo "  --help, -h     Show this help message"
+    echo "  --debug        Show resolved directories"
+    echo "  --dry-run      Show what would be executed without running"
+    echo ""
+    echo "All other arguments are passed directly to claude."
+    echo "If no arguments are provided, runs: claude --dangerously-skip-permissions --ide"
+}
+
+## Parse initial arguments
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    show_help
+    exit 0
+fi
+
+## Store special flags
+DEBUG_MODE=false
+DRY_RUN=false
+CLAUDE_ARGS=()
+
+## Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG_MODE=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        *)
+            CLAUDE_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
 ## Verify prerequisites exist
-command -v claude >/dev/null 2>&1 || { echo "Error: claude is not installed! Or not found."; exit 1; }
-command -v sandbox-exec >/dev/null 2>&1 || { echo "Error: sandbox-exec is not installed! Only works on Mac."; exit 1; }
+command -v claude >/dev/null 2>&1 || { error "claude is not installed! Or not found."; exit 1; }
+command -v sandbox-exec >/dev/null 2>&1 || { error "sandbox-exec is not installed! Only works on Mac."; exit 1; }
 
 ## Function to find the project directory (first dir to contain .git, otherwise pwd)
 find_project_dir() {
@@ -32,26 +81,51 @@ find_project_dir() {
 
 ## Locations
 script_dir=$(dirname $0)
-sandbox_file="${script_dir}/danger-claude.sb"
+sandbox_file="${DANGER_CLAUDE_PROFILE:-${script_dir}/danger-claude.sb}"
 project_dir=$(find_project_dir)
 temp_dir="/tmp"
 home_dir="${HOME}"
 cache_dir="${HOME}/Library/Caches"
 
 ## Validate
-[[ -d "${project_dir}" ]] || { echo "Project Dir does not exist: ${project_dir}"; exit 1; }
-[[ -d "${home_dir}" ]] || { echo "Home Dir does not exist: ${home_dir}"; exit 1; }
-[[ -d "${temp_dir}" ]] || { echo "Temp Dir does not exist: ${temp_dir}"; exit 1; }
-[[ -d "${cache_dir}" ]] || { echo "Cache Dir does not exist: ${cache_dir}"; exit 1; }
-[[ -f "${sandbox_file}" ]] || { echo "Sandbox File does not exist: ${sandbox_file}"; exit 1; }
+[[ -d "${project_dir}" ]] || { error "Project Dir does not exist: ${project_dir}"; exit 1; }
+[[ -d "${home_dir}" ]] || { error "Home Dir does not exist: ${home_dir}"; exit 1; }
+[[ -d "${temp_dir}" ]] || { error "Temp Dir does not exist: ${temp_dir}"; exit 1; }
+[[ -d "${cache_dir}" ]] || { error "Cache Dir does not exist: ${cache_dir}"; exit 1; }
+[[ -f "${sandbox_file}" ]] || { error "Sandbox File does not exist: ${sandbox_file}"; exit 1; }
 
 ## Debug
-if [[ "$1" == "debug" ]]; then
+if [[ "$DEBUG_MODE" == "true" ]]; then
+    info "Debug information:"
     echo "  Project Dir: ${project_dir}"
     echo "     Home Dir: ${home_dir}"
     echo "     Temp Dir: ${temp_dir}"
     echo "    Cache Dir: ${cache_dir}"
     echo " Sandbox File: ${sandbox_file}"
+    if [[ "${#CLAUDE_ARGS[@]}" -gt 0 ]]; then
+        echo "  Claude Args: ${CLAUDE_ARGS[@]}"
+    else
+        echo "  Claude Args: --dangerously-skip-permissions --ide (default)"
+    fi
+    echo ""
+    exit 0
+fi
+
+## Set default arguments if none provided
+if [[ "${#CLAUDE_ARGS[@]}" -eq 0 ]]; then
+    CLAUDE_ARGS=("--dangerously-skip-permissions" "--ide")
+fi
+
+## Dry run mode
+if [[ "$DRY_RUN" == "true" ]]; then
+    info "Dry run mode - would execute:"
+    echo "sandbox-exec \\"
+    echo "    -D \"PROJECT_DIR=${project_dir}\" \\"
+    echo "    -D \"TMP_DIR=${temp_dir}\" \\"
+    echo "    -D \"HOME_DIR=${home_dir}\" \\"
+    echo "    -D \"CACHE_DIR=${cache_dir}\" \\"
+    echo "    -f \"${sandbox_file}\" \\"
+    echo "    claude ${CLAUDE_ARGS[@]}"
     exit 0
 fi
 
@@ -62,4 +136,4 @@ sandbox-exec \
     -D "HOME_DIR=${home_dir}" \
     -D "CACHE_DIR=${cache_dir}" \
     -f "${sandbox_file}" \
-    claude --dangerously-skip-permissions --ide
+    claude "${CLAUDE_ARGS[@]}"

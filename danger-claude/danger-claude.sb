@@ -76,6 +76,10 @@
     ;; Git configuration (for commits)
     (literal (string-append (param "HOME_DIR") "/.gitconfig"))
     
+    ;; npm/yarn cache paths for JavaScript projects
+    (subpath (string-append (param "HOME_DIR") "/.npm"))
+    (subpath (string-append (param "HOME_DIR") "/.yarn"))
+    
     ;; Standard I/O devices
     (literal "/dev/stdout")
     (literal "/dev/stderr")
