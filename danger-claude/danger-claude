@@ -1,0 +1,65 @@
+#!/usr/bin/env zsh
+
+## Verify prerequisites exist
+command -v claude >/dev/null 2>&1 || { echo "Error: claude is not installed! Or not found."; exit 1; }
+command -v sandbox-exec >/dev/null 2>&1 || { echo "Error: sandbox-exec is not installed! Only works on Mac."; exit 1; }
+
+## Function to find the project directory (first dir to contain .git, otherwise pwd)
+find_project_dir() {
+    local current_dir="$(pwd)"
+    local search_dir="$current_dir"
+    
+    while true; do
+        # Check if work.toml exists in current search directory
+        if [[ -d "$search_dir/.git" ]]; then
+            echo "$search_dir"
+            return 0
+        fi
+        
+        # Get parent directory
+        local parent_dir="$(dirname "$search_dir")"
+        
+        # Check if we've reached the root directory
+        if [[ "$parent_dir" == "$search_dir" ]]; then
+            echo "$current_dir"
+            return 0
+        fi
+        
+        # Move up one level
+        search_dir="$parent_dir"
+    done
+}
+
+## Locations
+script_dir=$(dirname $0)
+sandbox_file="${script_dir}/danger-claude.sb"
+project_dir=$(find_project_dir)
+temp_dir="/tmp"
+home_dir="${HOME}"
+cache_dir="${HOME}/Library/Caches"
+
+## Validate
+[[ -d "${project_dir}" ]] || { echo "Project Dir does not exist: ${project_dir}"; exit 1; }
+[[ -d "${home_dir}" ]] || { echo "Home Dir does not exist: ${home_dir}"; exit 1; }
+[[ -d "${temp_dir}" ]] || { echo "Temp Dir does not exist: ${temp_dir}"; exit 1; }
+[[ -d "${cache_dir}" ]] || { echo "Cache Dir does not exist: ${cache_dir}"; exit 1; }
+[[ -f "${sandbox_file}" ]] || { echo "Sandbox File does not exist: ${sandbox_file}"; exit 1; }
+
+## Debug
+if [[ "$1" == "debug" ]]; then
+    echo "  Project Dir: ${project_dir}"
+    echo "     Home Dir: ${home_dir}"
+    echo "     Temp Dir: ${temp_dir}"
+    echo "    Cache Dir: ${cache_dir}"
+    echo " Sandbox File: ${sandbox_file}"
+    exit 0
+fi
+
+## Execute
+sandbox-exec \
+    -D "PROJECT_DIR=${project_dir}" \
+    -D "TMP_DIR=${temp_dir}" \
+    -D "HOME_DIR=${home_dir}" \
+    -D "CACHE_DIR=${cache_dir}" \
+    -f "${sandbox_file}" \
+    claude --dangerously-skip-permissions --ide
