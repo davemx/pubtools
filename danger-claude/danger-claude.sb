@@ -48,11 +48,22 @@
     (sysctl-name "kern.version")
 )
 
+(when (and (param "EXTRA_DIR") 
+           (not (string=? (param "EXTRA_DIR") "")))
+    (allow file-write* file-write-create
+        (subpath (param "EXTRA_DIR"))))
+
 ;; Allow file writes to specific paths only
 ;; Note: file-write* does NOT include file-write-create, so we need both
 (allow file-write* file-write-create
     ;; Project directory
     (subpath (param "PROJECT_DIR"))
+    
+    ;; Allow write to EXTRA_DIR if set and not empty
+;;    (when (and (param "EXTRA_DIR") 
+;;               (not (string=? (param "EXTRA_DIR") "")))
+;;        (allow file-write* 
+;;            (subpath (param "EXTRA_DIR"))))
     
     ;; Temporary directories
     (subpath (param "TMP_DIR"))

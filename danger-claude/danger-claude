@@ -13,6 +13,7 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --help, -h     Show this help message"
+    echo "  -w DIR         Specify directory containing git worktrees (enables worktree access)"
     echo "  --debug        Show resolved directories"
     echo "  --dry-run      Show what would be executed without running"
     echo ""
@@ -29,6 +30,7 @@ fi
 ## Store special flags
 DEBUG_MODE=false
 DRY_RUN=false
+worktrees_dir=""
 CLAUDE_ARGS=()
 
 ## Parse arguments
@@ -42,6 +44,14 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        -w)
+            if [[ $# -lt 2 ]]; then
+                error "-w requires a directory argument"
+                exit 1
+            fi
+            worktrees_dir="$2"
+            shift 2
+            ;;
         *)
             CLAUDE_ARGS+=("$1")
             shift
@@ -52,6 +62,11 @@ done
 ## Verify prerequisites exist
 command -v claude >/dev/null 2>&1 || { error "claude is not installed! Or not found."; exit 1; }
 command -v sandbox-exec >/dev/null 2>&1 || { error "sandbox-exec is not installed! Only works on Mac."; exit 1; }
+
+## Function to check if the current branch is the default branch (main/develop/master/etc)
+is_default_branch() {
+    [[ $(git rev-parse --abbrev-ref HEAD) == $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@') ]] && echo "true" || echo "false"
+}
 
 ## Function to find the project directory (first dir to contain .git, otherwise pwd)
 find_project_dir() {
@@ -81,11 +96,16 @@ find_project_dir() {
 
 ## Locations
 script_dir=$(dirname $0)
-sandbox_file="${DANGER_CLAUDE_PROFILE:-${script_dir}/danger-claude.sb}"
+sandbox_file="${DANGER_CLAUDE_SANDBOX:-${script_dir}/danger-claude.sb}"
 project_dir=$(find_project_dir)
 temp_dir="/tmp"
 home_dir="${HOME}"
 cache_dir="${HOME}/Library/Caches"
+
+# Ignore worktrees dir argument if not in default branch
+if [[ $(is_default_branch) == "false" ]]; then
+    worktrees_dir=""
+fi
 
 ## Validate
 [[ -d "${project_dir}" ]] || { error "Project Dir does not exist: ${project_dir}"; exit 1; }
@@ -93,6 +113,9 @@ cache_dir="${HOME}/Library/Caches"
 [[ -d "${temp_dir}" ]] || { error "Temp Dir does not exist: ${temp_dir}"; exit 1; }
 [[ -d "${cache_dir}" ]] || { error "Cache Dir does not exist: ${cache_dir}"; exit 1; }
 [[ -f "${sandbox_file}" ]] || { error "Sandbox File does not exist: ${sandbox_file}"; exit 1; }
+if [[ -n "$worktrees_dir" ]]; then
+    [[ -d "${worktrees_dir}" ]] || { error "Worktrees Dir does not exist: ${worktrees_dir}"; exit 1; }
+fi
 
 ## Debug
 if [[ "$DEBUG_MODE" == "true" ]]; then
@@ -102,6 +125,9 @@ if [[ "$DEBUG_MODE" == "true" ]]; then
     echo "     Temp Dir: ${temp_dir}"
     echo "    Cache Dir: ${cache_dir}"
     echo " Sandbox File: ${sandbox_file}"
+    if [[ -n "$worktrees_dir" ]]; then
+        echo "Worktrees Dir: ${worktrees_dir}"
+    fi
     if [[ "${#CLAUDE_ARGS[@]}" -gt 0 ]]; then
         echo "  Claude Args: ${CLAUDE_ARGS[@]}"
     else
@@ -124,6 +150,9 @@ if [[ "$DRY_RUN" == "true" ]]; then
     echo "    -D \"TMP_DIR=${temp_dir}\" \\"
     echo "    -D \"HOME_DIR=${home_dir}\" \\"
     echo "    -D \"CACHE_DIR=${cache_dir}\" \\"
+    if [[ -n "$worktrees_dir" ]]; then
+        echo "    -D \"EXTRA_DIR=${worktrees_dir}\" \\"
+    fi
     echo "    -f \"${sandbox_file}\" \\"
     echo "    claude ${CLAUDE_ARGS[@]}"
     exit 0
@@ -135,5 +164,6 @@ sandbox-exec \
     -D "TMP_DIR=${temp_dir}" \
     -D "HOME_DIR=${home_dir}" \
     -D "CACHE_DIR=${cache_dir}" \
+    -D "EXTRA_DIR=${worktrees_dir}" \
     -f "${sandbox_file}" \
     claude "${CLAUDE_ARGS[@]}"
